@@ -147,56 +147,79 @@ pub struct GameResult<'a> {
     word_to_points: HashMap<&'a Word, Points>,
 }
 
-pub trait SolveStrategy {
-    fn solve<'a>(game: &GameProcessed, dict: &'a Dictionary) -> GameResult<'a>;
+pub trait SolveStrategy<'a> {
+    fn new(dict: &'a Dictionary) -> Self;
+
+    fn solve(&self, game: &GameProcessed) -> GameResult<'a>;
 }
 
-pub struct GameSolver;
+pub struct GameSolver<S> {
+    strategy: S,
+}
 
-impl GameSolver {
-    pub fn solve_with<'a, S: SolveStrategy>(
-        game: &Game,
-        dict: &'a Dictionary,
-    ) -> anyhow::Result<GameResult<'a>> {
-        let game: GameProcessed = game.try_into()?;
-        Ok(S::solve(&game, dict))
+impl<'a, S> GameSolver<S>
+where
+    S: SolveStrategy<'a>,
+{
+    pub fn new(dict: &'a Dictionary) -> Self {
+        let strategy = S::new(dict);
+        GameSolver { strategy }
+    }
+
+    pub fn solve(&self, game: &Game) -> anyhow::Result<GameResult<'a>> {
+        let processed: GameProcessed = game.try_into()?;
+        Ok(self.strategy.solve(&processed))
     }
 }
 
-pub struct BruteForce;
+pub struct BruteForce<'a> {
+    dict: &'a Dictionary,
+}
 
-impl SolveStrategy for BruteForce {
-    fn solve<'a>(game: &GameProcessed, dict: &'a Dictionary) -> GameResult<'a> {
-        let word_to_points = dict
+impl<'a> SolveStrategy<'a> for BruteForce<'a> {
+    fn new(dict: &'a Dictionary) -> Self {
+        BruteForce { dict }
+    }
+
+    fn solve(&self, game: &GameProcessed) -> GameResult<'a> {
+        let word_to_points = self
+            .dict
             .words
             .iter()
             .filter_map(|word| {
                 Guess::new(word)
-                    .eval_points(&game, dict)
-                    // discard incorrect guesses.
+                    .eval_points(game, self.dict)
                     .ok()
                     .map(|points| (word, points))
             })
             .collect();
+
         GameResult { word_to_points }
     }
 }
 
-pub struct ParallelBruteForce;
+pub struct ParallelBruteForce<'a> {
+    dict: &'a Dictionary,
+}
 
-impl SolveStrategy for ParallelBruteForce {
-    fn solve<'a>(game: &GameProcessed, dict: &'a Dictionary) -> GameResult<'a> {
-        let word_to_points: HashMap<&Word, Points> = dict
+impl<'a> SolveStrategy<'a> for ParallelBruteForce<'a> {
+    fn new(dict: &'a Dictionary) -> Self {
+        ParallelBruteForce { dict }
+    }
+
+    fn solve(&self, game: &GameProcessed) -> GameResult<'a> {
+        let word_to_points = self
+            .dict
             .words
             .par_iter()
             .filter_map(|word| {
                 Guess::new(word)
-                    .eval_points(&game, dict)
-                    // discard incorrect guesses.
+                    .eval_points(game, self.dict)
                     .ok()
                     .map(|points| (word, points))
             })
             .collect();
+
         GameResult { word_to_points }
     }
 }

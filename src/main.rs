@@ -14,11 +14,11 @@ fn main() -> anyhow::Result<()> {
     let game = Game::new('C', vec!['A', 'L', 'T', 'E', 'F', 'I']);
     dbg!(timeit!(
         "brute force",
-        GameSolver::solve_with::<BruteForce>(&game, &dict)?
+        GameSolver::<BruteForce>::new(&dict).solve(&game)?
     ));
     dbg!(timeit!(
         "parallel brute force",
-        GameSolver::solve_with::<ParallelBruteForce>(&game, &dict)?
+        GameSolver::<ParallelBruteForce>::new(&dict).solve(&game)?
     ));
 
     Ok(())
