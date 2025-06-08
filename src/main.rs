@@ -1,4 +1,6 @@
-use game::{BruteForce, Dictionary, Game, GameSolver, ParallelBruteForce};
+use game::{
+    BruteForce, Dictionary, Game, GameSolver, LetterMap, ParallelBruteForce, ParallelLetterMap,
+};
 
 mod game;
 
@@ -12,14 +14,20 @@ fn main() -> anyhow::Result<()> {
     log::info!("dictionary had {} entries", dict.words.len());
 
     let game = Game::new('C', vec!['A', 'L', 'T', 'E', 'F', 'I']);
-    dbg!(timeit!(
-        "brute force",
-        GameSolver::<BruteForce>::new(&dict).solve(&game)?
-    ));
-    dbg!(timeit!(
-        "parallel brute force",
-        GameSolver::<ParallelBruteForce>::new(&dict).solve(&game)?
-    ));
+
+    let solver = GameSolver::<BruteForce>::new(&dict);
+    let sol = timeit!("brute force", solver.solve(&game)?);
+
+    let solver = GameSolver::<ParallelBruteForce>::new(&dict);
+    timeit!("parallel brute force", solver.solve(&game)?);
+
+    let solver = GameSolver::<LetterMap>::new(&dict);
+    timeit!("letter map", solver.solve(&game)?);
+
+    let solver = GameSolver::<ParallelLetterMap>::new(&dict);
+    timeit!("parallel letter map", solver.solve(&game)?);
+
+    dbg!(sol);
 
     Ok(())
 }

@@ -223,3 +223,84 @@ impl<'a> SolveStrategy<'a> for ParallelBruteForce<'a> {
         GameResult { word_to_points }
     }
 }
+
+// Pre-compute a map from letter to all words with that letter.
+pub struct LetterMap<'a> {
+    letter_to_words: HashMap<Letter, HashSet<&'a Word>>,
+    dict: &'a Dictionary,
+}
+
+impl<'a> SolveStrategy<'a> for LetterMap<'a> {
+    fn new(dict: &'a Dictionary) -> Self {
+        let mut letter_to_words = HashMap::new();
+        for word in &dict.words {
+            for letter in word.chars() {
+                letter_to_words
+                    .entry(letter)
+                    .or_insert_with(|| HashSet::new())
+                    .insert(word);
+            }
+        }
+        Self {
+            letter_to_words,
+            dict,
+        }
+    }
+
+    fn solve(&self, game: &GameProcessed) -> GameResult<'a> {
+        let word_to_points = self
+            .letter_to_words
+            .get(&game.center_letter)
+            .into_iter()
+            .flatten()
+            .filter_map(|&word| {
+                Guess::new(word)
+                    .eval_points(game, self.dict)
+                    .ok()
+                    .map(|points| (word, points))
+            })
+            .collect();
+
+        GameResult { word_to_points }
+    }
+}
+
+pub struct ParallelLetterMap<'a> {
+    letter_to_words: HashMap<Letter, Vec<&'a Word>>,
+    dict: &'a Dictionary,
+}
+
+impl<'a> SolveStrategy<'a> for ParallelLetterMap<'a> {
+    fn new(dict: &'a Dictionary) -> Self {
+        let mut letter_to_words = HashMap::new();
+        for word in &dict.words {
+            for letter in word.chars() {
+                letter_to_words
+                    .entry(letter)
+                    .or_insert_with(|| Vec::new())
+                    .push(word);
+            }
+        }
+        Self {
+            letter_to_words,
+            dict,
+        }
+    }
+
+    fn solve(&self, game: &GameProcessed) -> GameResult<'a> {
+        let word_to_points = match self.letter_to_words.get(&game.center_letter) {
+            Some(words) => words
+                .par_iter()
+                .filter_map(|&word| {
+                    Guess::new(word)
+                        .eval_points(game, self.dict)
+                        .ok()
+                        .map(|points| (word, points))
+                })
+                .collect(),
+            None => HashMap::new(),
+        };
+
+        GameResult { word_to_points }
+    }
+}
