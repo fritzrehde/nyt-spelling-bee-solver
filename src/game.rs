@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::Context;
 use derive_new::new;
+use rayon::prelude::*;
 
 type Letter = char;
 type Word = String;
@@ -14,7 +15,7 @@ pub struct Game {
 }
 
 // invariant: center letter is not contained within non center letters.
-struct GameProcessed {
+pub struct GameProcessed {
     center_letter: Letter,
     non_center_letters: HashSet<Letter>,
 }
@@ -75,7 +76,7 @@ impl<'a> Guess<'a> {
         // - No cussing either, sorry.
         // - Letters can be used more than once.
 
-        if self.guessed_word.len() <= 4 {
+        if self.guessed_word.len() < 4 {
             return Err(GuessingError::TooShort);
         }
         if !dict.words.contains(self.guessed_word) {
@@ -129,8 +130,10 @@ impl Dictionary {
 
         let words: HashSet<String> = response
             .lines()
-            // only keep non-empty lines with only uppercase chars.
+            // filter out non-word lines: only keep non-empty lines with only uppercase chars.
             .filter(|line| !line.is_empty() && line.chars().all(char::is_uppercase))
+            // filter out short words.
+            .filter(|line| line.len() >= 4)
             .map(str::trim)
             .map(|line| line.to_string())
             .collect();
@@ -139,16 +142,31 @@ impl Dictionary {
     }
 }
 
-pub struct GameSolver;
-
 #[derive(Debug)]
 pub struct GameResult<'a> {
     word_to_points: HashMap<&'a Word, Points>,
 }
 
+pub trait SolveStrategy {
+    fn solve<'a>(game: &GameProcessed, dict: &'a Dictionary) -> GameResult<'a>;
+}
+
+pub struct GameSolver;
+
 impl GameSolver {
-    pub fn solve<'a>(game: &Game, dict: &'a Dictionary) -> anyhow::Result<GameResult<'a>> {
+    pub fn solve_with<'a, S: SolveStrategy>(
+        game: &Game,
+        dict: &'a Dictionary,
+    ) -> anyhow::Result<GameResult<'a>> {
         let game: GameProcessed = game.try_into()?;
+        Ok(S::solve(&game, dict))
+    }
+}
+
+pub struct BruteForce;
+
+impl SolveStrategy for BruteForce {
+    fn solve<'a>(game: &GameProcessed, dict: &'a Dictionary) -> GameResult<'a> {
         let word_to_points = dict
             .words
             .iter()
@@ -160,6 +178,25 @@ impl GameSolver {
                     .map(|points| (word, points))
             })
             .collect();
-        Ok(GameResult { word_to_points })
+        GameResult { word_to_points }
+    }
+}
+
+pub struct ParallelBruteForce;
+
+impl SolveStrategy for ParallelBruteForce {
+    fn solve<'a>(game: &GameProcessed, dict: &'a Dictionary) -> GameResult<'a> {
+        let word_to_points: HashMap<&Word, Points> = dict
+            .words
+            .par_iter()
+            .filter_map(|word| {
+                Guess::new(word)
+                    .eval_points(&game, dict)
+                    // discard incorrect guesses.
+                    .ok()
+                    .map(|points| (word, points))
+            })
+            .collect();
+        GameResult { word_to_points }
     }
 }
